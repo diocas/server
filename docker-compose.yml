@@ -1,0 +1,314 @@
+version: '2'
+services:
+
+################# Media #################
+
+  plex:
+    container_name: plex
+    image: linuxserver/plex
+    restart: always
+    cpuset: 3-15
+    network_mode: "host"
+    privileged: true
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - VERION=latest
+    volumes:
+      - ${SERVER_CONFIG_PATH}/plex:/config
+      - /tmp:/transcoder
+      - ${SERVER_MEDIA_PATH}:/data
+      - ${SERVER_CERTS_PATH}:/certs:ro
+   
+
+  deluge:
+    container_name: deluge
+    image: binhex/arch-deluge  
+    restart: always
+    cpu_shares: 308
+    ports:
+      - 58846:58846
+      - 58946:58946
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_CONFIG_PATH}/deluge:/config
+      - ${SERVER_DOWNLOADS_PATH}/:/downloads
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - media
+      - proxy
+ 
+  couch:
+    container_name: couch
+    image: linuxserver/couchpotato  
+    restart: always
+    cpu_shares: 154
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_CONFIG_PATH}/couchpotato:/config
+      - ${SERVER_DOWNLOADS_PATH}:${SERVER_DOWNLOADS_PATH}
+      - ${SERVER_MEDIA_PATH}/movies/:${SERVER_MEDIA_PATH}/movies/
+      - ${SERVER_MEDIA_PATH}/animation/:${SERVER_MEDIA_PATH}/animation/
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - media
+      - proxy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+ 
+  sonarr:
+    container_name: sonarr
+    image: linuxserver/sonarr
+    restart: always
+    cpu_shares: 154
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_CONFIG_PATH}/sonarr:/config
+      - ${SERVER_DOWNLOADS_PATH}:/downloads
+      - ${SERVER_MEDIA_PATH}/shows:/tv
+      - /dev/rtc:/dev/rtc:ro
+    networks:
+      - media
+      - proxy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  headphones:
+    container_name: headphones
+    image: linuxserver/headphones
+    restart: always
+    cpu_shares: 154
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_CONFIG_PATH}/headphones:/config
+      - ${SERVER_DOWNLOADS_PATH}:/downloads
+      - ${SERVER_MEDIA_PATH}/music:/music
+      - /dev/rtc:/dev/rtc:ro
+    networks:
+      - media
+      - proxy
+
+  calibre:
+    container_name: calibre
+    image: janeczku/calibre-web
+    restart: always
+    cpu_shares: 154
+    environment:
+      - ENABLE_UPLOADING=1
+      - ANON_BROWSE=1
+    volumes:
+      - ${SERVER_DATA_PATH}/books:/calibre
+    networks:
+      - media
+      - proxy
+    ports:
+      - 9494:80
+
+################# Files #################
+
+  seafile:
+    container_name: seafile
+    image: jenserat/seafile 
+    restart: always
+    cpu_shares: 308
+    ports:
+      - 10001:10001
+      - 12001:12001
+      - 8080:8080
+    environment:
+      - fastcgi=true
+      - autostart=true
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_DATA_PATH}/cloud:/opt/seafile
+    networks:
+      - files
+      - backend
+      - proxy
+
+################# Development #################
+
+  gitlab:
+    container_name: gitlab
+    image: gitlab/gitlab-ce:latest 
+    cpu_shares: 154
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'https://${SERVER_URL}/gitlab'
+    volumes:
+      - ${SERVER_CONFIG_PATH}/gitlab:/etc/gitlab:Z 
+      - ${SERVER_LOGS_PATH}/gitlab/:/var/log/gitlab:Z 
+      - ${SERVER_DATA_PATH}/gitlab/:/var/opt/gitlab:Z 
+    networks:
+      - development
+      - backend
+      - proxy
+
+  jenkins:
+    container_name: jenkins
+    image: jenkins
+    cpu_shares: 103
+    environment:
+      - JENKINS_OPTS="--prefix=/jenkins"
+    ports:
+      - 50000:50000
+    volumes:
+      - ${SERVER_DATA_PATH}/jenkins:/var/jenkins_home
+    networks:
+      - development
+      - backend
+      - proxy
+
+################# Management #################
+ 
+  dockerui:
+    container_name: dockerui
+    image: uifd/ui-for-docker
+    restart: always
+    privileged: true
+    cpu_shares: 52
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - management
+      - proxy
+
+  phpldapadmin:
+    container_name: phpldapadmin
+    image: dinkel/phpldapadmin
+    restart: always
+    cpu_shares: 52
+    networks:
+      - management
+      - proxy
+
+  cadvisor:
+    container_name: cadvisor
+    image: google/cadvisor:latest
+    restart: always
+    privileged: true
+    volumes:
+      - /:/rootfs:ro 
+      - /var/run:/var/run:rw 
+      - /var/lib/docker:/var/lib/docker:ro 
+      - /cgroup:/cgroup:ro
+      - /cgroup/cpu:/cgroup/cpu
+      - /cgroup/cpuacct:/cgroup/cpuacct
+      - /cgroup/cpuset:/cgroup/cpuset
+      - /cgroup/memory:/cgroup/memory
+      - /cgroup/blkio:/cgroup/blkio
+    ports:
+      - 8282:8080 
+
+  plexpy:
+    container_name: plexpy
+    image: linuxserver/plexpy
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${SERVER_CONFIG_PATH}/plexpy:/config
+      - ${SERVER_CONFIG_PATH}/plex/Library/Application\ Support/Plex\ Media\ Server/Logs/:/logs:ro
+    networks:
+      - proxy
+
+
+################# Backend #################
+  mysql:
+    container_name: mysql
+    image: mysql:latest
+    restart: always
+    cpu_shares: 103
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DEFAULT_PASS}
+    volumes:
+      - ${SERVER_CONFIG_PATH}/mysql:/var/lib/mysql
+    networks:
+      - backend
+
+  openldap:
+    container_name: openldap
+    image: dinkel/openldap
+    restart: always
+    cpu_shares: 103
+    ports:
+      - 389:389
+    environment:
+      - SLAPD_DOMAIN=ldap.castrocorp.com
+      - SLAPD_ORGANIZATION="Casa"
+      - SLAPD_RECONFIGURE=true
+      - SLAPD_PASSWORD=${DEFAULT_PASS}
+      - SLAPD_CONFIG_PASSWORD=${DEFAULT_PASS}
+    volumes:
+      - ${SERVER_CONFIG_PATH}/openldap:/etc/ldap
+      - ${SERVER_CONFIG_PATH}/openldap/db:/var/lib/ldap
+    networks:
+      - management
+      - backend
+
+
+  duckdns:
+    container_name: duckdns
+    image: coppit/duckdns
+    volumes:
+      - /etc/localtime:/etc/localtime
+      - ${SERVER_CONFIG_PATH}/duckdns:/config
+
+################# Proxy #################
+
+
+  nginx:
+    container_name: nginx
+    image: diocas/nginx-ldap-fancy 
+    restart: always
+    cpu_shares: 154
+    ports:
+      - 80:80
+      - 443:443
+      - 9000:9000
+    depends_on:
+      - deluge
+      - couch
+      - sonarr
+      - seafile
+      - gitlab
+      - openldap
+      - plexpy
+      - headphones
+      - calibre
+    volumes:
+      - /etc/nginx/conf.d
+      - /etc/nginx/vhost.d
+      - ${SERVER_CONFIG_PATH}/nginx/static:/usr/local/nginx/html:ro
+      - ${SERVER_DATA_PATH}/cloud/:/seafile
+      - ${SERVER_DOWNLOADS_PATH}:/downloads
+      - ${SERVER_CERTS_PATH}:/etc/nginx/certs:ro
+      - ${SERVER_CONFIG_PATH}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${SERVER_CONFIG_PATH}/nginx/paths.conf:/etc/nginx/paths.conf:ro
+      - ${SERVER_CONFIG_PATH}/nginx/ldap.conf:/etc/nginx/ldap.conf:ro
+      - ${SERVER_LOGS_PATH}:/var/logs
+    networks:
+      - backend
+      - proxy
+
+
+################# Networks #################
+
+networks:
+    media:
+    files:
+    development:
+    management:
+    backend:
+    proxy:
